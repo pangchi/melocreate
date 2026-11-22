@@ -57,7 +57,17 @@ Soft-key commands: **Duration, Insert, Delete, Clear, Play / Stop, More** (opens
 
 - A MIDP 1.0 / CLDC 1.0 phone. The app targets **Nokia Series 40** devices (for example the Nokia 3100, 3300, 6100, 6610 and 7210).
 - For playback: the Nokia UI API (`com.nokia.mid.sound`).
-- For sending: a GPRS/WAP data connection and a Clickatell account. *The original Clickatell HTTP API that MeloCreate used, and the 2G/GPRS networks it ran on, have mostly been shut down. Sending is unlikely to work today.*
+- For sending: a GPRS/WAP data connection and a Clickatell account. Sending no longer works today; see the next section.
+
+## Does Send still work?
+
+Almost certainly not, for three separate reasons:
+
+1. **The API is a retired generation.** MeloCreate logs in at `api.clickatell.com/http/auth` with a username, password and API ID, then sends with `api.clickatell.com/http/sendmsg`. That is Clickatell's old *Developer Central* HTTP API. Clickatell's documentation now lists it as archived and only relevant to accounts created before 15 November 2016. New accounts use the *One API* instead (a JSON POST to `platform.clickatell.com/v1/message`, authorised with an API key), which MeloCreate doesn't speak. An old pre-2016 account might still be accepted by the legacy endpoint, but this hasn't been tested and Clickatell gives no shutdown date.
+2. **The phone can't get online.** The MIDlet needs a GPRS/WAP data connection. 2G networks have been switched off in Singapore (2017) and in many other countries, so a Series 40 phone of that era has no data connection to make the call.
+3. **Modern phones can't receive it.** The SMS is a Nokia Smart Messaging ringtone: binary data with the UDH `06050415810000`, addressed to the phone's ringtone port. Only old Nokia-compatible handsets understood that. A current iPhone or Android phone shows it as junk or drops it.
+
+To get a tune out of MeloCreate today, use the [web](web/) or [Python](python/) recreations. They export the same Smart Messaging bytes as a Nokia `.ott` file, plus RTTTL and WAV.
 
 ## Installing and running
 
