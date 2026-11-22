@@ -1,0 +1,13 @@
+MIDlet-Jar-Size: 37317
+MIDlet-1: MeloCreate, , GUIComposer.MeloCreate
+MIDlet-Jar-URL: melocreate.jar
+MicroEdition-Configuration: CLDC-1.0
+MIDlet-Version: 1.0
+MIDlet-Name: MeloCreate
+MIDlet-Description: Ringtone composer for NMP S40
+MIDlet-Data-Size: 1792
+MIDlet-Vendor: (C) 2003 Alan ONG pangchi@ieee.org +6598421610
+MIDlet-Info-URL: http://home.pacific.net.sg/~pangchi/index.wml
+MicroEdition-Profile: MIDP-1.0
+MIDlet-Certificate-1-1: MIIB2DCCAUECBD+IJzEwDQYJKoZIhvcNAQEEBQAwMzELMAkGA1UEBhMCSEsxETAPBgNVBAcTCFRzaW5nIFlpMREwDwYDVQQDEwhBbGFuIE9ORzAeFw0wMzEwMTExNTUyMTdaFw0wNDAxMDkxNTUyMTdaMDMxCzAJBgNVBAYTAkhLMREwDwYDVQQHEwhUc2luZyBZaTERMA8GA1UEAxMIQWxhbiBPTkcwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAK5OAHiLlKMpo5MEoOo4oc+nJpdMyhiiOfflyIBjqLtRgcRQQR/8gwGfDaRjRjEutQMZPzSySpRzw2F8X7ce/LthkDLPWZX5SadrfAPFK+/zRUnT1avnZAepa8IvKlqrd6ulAQg0NDcgPHGQ+BzIzl7CGM/ARcvAVnbVePE5uc03AgMBAAEwDQYJKoZIhvcNAQEEBQADgYEAFN5vZWHgLFC7Gy/DCF2uI5d+8/Hn2O1wpe9Q/7ac8G9vuVvP3DxX68sSd/s/BrcwExIpVEW19CdAWgIds/9hbFQaJCtZLVijhzIl19KBLP1gIm4nefKi5SUkE+1RLweEsk6f4oGtTlgrPsS1wN7jT5yMM7sEqwB2Gdgq2E01C4M=
+MIDlet-Jar-RSA-SHA1: LUyt/pVvwjaAJPtcxaxRyvzMICJm4+J+5E2W0WJVkEWnFHclk+NI6NSr8wJ0q6QccLkuGjOMX86a+ovuU/Qu4ptMyIjIJ5qEOGJDLjt6fU90wmkSq/aFsEpfiSgAah9Nb9QPqaQiaQ6BYDLCI9BZ70BnD/nYGKaJYPnt1advlio=
