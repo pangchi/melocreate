@@ -6,6 +6,8 @@ MeloCreate lets you write a monophonic ringtone on a music staff right on the ph
 
 > This is a historical project. It is kept here as-is, as the compiled MIDlet. The original Java source is not in this repository.
 
+**Try it today** without a phone or emulator: there is a [browser version](web/) (open `web/index.html`) and a [Python desktop version](python/). Both recreate the original editor; neither includes the SMS sending.
+
 ---
 
 ## Features
@@ -14,7 +16,8 @@ MeloCreate lets you write a monophonic ringtone on a music staff right on the ph
 - **Note editing.** Insert, delete and clear notes, and move a note up or down in pitch. Notes are named C, C#/Db, D … B.
 - **Durations and styles.** Each note has a duration, which can be dotted or a triplet. Each note also has a playing style: natural, continuous or staccato. Rests are supported.
 - **Playback.** The tune plays through the Nokia UI Sound API (`com.nokia.mid.sound.Sound`), so you can hear it as you compose. On phones without that API, a silent "dummy" player is used, so the editor still works.
-- **Title and tempo.** The title can be up to 15 characters. The tempo is snapped to the nearest value in the Smart Messaging BPM table (25, 28, 31, 35, 40 … 900 BPM).
+- **Title and tempo.** The title can be up to 15 characters. When the tune is played or sent, the tempo is rounded up to the next value in the Smart Messaging BPM table (25, 28, 31, 35, 40 … 900 BPM), so 120 plays at 125.
+- **A new note takes its pitch from the previous note.** If there is no previous note, it starts on C.
 - **Save and load.** Ringtones are stored in the phone's Record Management System (RMS), in numbered slots. Each slot shows the ringtone's title, or `-Empty-`.
 - **Send by SMS.** The ringtone is encoded to the Nokia Smart Messaging binary ringtone format and sent as a hex payload through the Clickatell HTTP SMS gateway. You enter your Clickatell username, API ID and password, plus the recipient's number in international format (`+65…`). The settings are saved on the phone.
   - Up to 128 notes can be stored. Anything longer than about 70 notes needs more than one SMS, and the app warns you that some phones may not accept a multi-part ringtone.
@@ -76,6 +79,8 @@ The JAD carries a 2003 self-signed code-signing certificate that has long since 
 | `melocreate.jad` | Application descriptor, with signing fields |
 | `melocreate.zip` | A copy of the same classes as the JAR |
 | `LICENSE` | MIT |
+| `python/` | Desktop recreation in Python/Tkinter (no SMS sending). See [python/README.md](python/README.md). |
+| `web/` | Browser recreation in a single `index.html`, which also works on phones (no SMS sending). See [web/README.md](web/README.md). |
 
 ### Code structure (from the compiled classes)
 

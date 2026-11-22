@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>MeloCreate</title>
+<meta name="description" content="MeloCreate: a browser recreation of the 2003 Nokia Series 40 ringtone composer.">
+<style>
+  :root {
+    --body: #262a31; --key: #3a404a; --key-active: #59616e; --key-text: #e8eaed;
+    --muted: #8a93a3; --bar: #1b1e23; --bezel: #0d0f12;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--body); color: var(--key-text);
+    font: 14px/1.4 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  body { min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  .toolbar { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+    padding: 8px 10px; background: var(--bar); border-bottom: 1px solid #000; }
+  .toolbar button, .toolbar label { font: inherit; font-size: 13px; color: var(--key-text); background: var(--key);
+    border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .toolbar button:hover { background: var(--key-active); }
+  .toolbar .sep { width: 1px; background: #3a404a; margin: 2px 4px; }
+  .toolbar label { display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--muted); }
+  @media (max-width: 600px) { .toolbar button, .toolbar label { padding: 5px 8px; font-size: 12px; } }
+  .phone { padding: 14px 12px 18px; display: flex; flex-direction: column; align-items: center; }
+  .brand { font-size: 11px; font-weight: 700; letter-spacing: .25em; color: var(--muted); margin-bottom: 8px; }
+  .bezel { background: var(--bezel); padding: 6px; border-radius: 6px; }
+  canvas { display: block; background: #fff; cursor: pointer; image-rendering: pixelated;
+    image-rendering: crisp-edges; touch-action: none; }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; margin-top: 14px; width: min(300px, 92vw); }
+  .keypad .k { user-select: none; -webkit-user-select: none; touch-action: none; text-align: center;
+    background: var(--key); color: var(--key-text); border-radius: 7px; padding: 8px 0; font-weight: 700;
+    font-size: 15px; cursor: pointer; }
+  .keypad .k.on { background: var(--key-active); }
+  .keypad .k.soft { font-size: 13px; }
+  .keypad .gap { height: 4px; grid-column: 1 / 4; }
+  .keypad .blank { visibility: hidden; }
+  .status { width: 100%; margin-top: auto; background: var(--bar); color: #aab2bf; font-size: 12px; padding: 5px 10px; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 10; }
+  .modal.open { display: flex; }
+  .dialog { background: #f4f5f7; color: #111; border-radius: 10px; padding: 18px 20px; width: min(420px, 92vw);
+    box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+  .dialog h2 { margin: 0 0 6px; font-size: 16px; }
+  .dialog p { margin: 0 0 10px; white-space: pre-line; color: #333; }
+  .dialog input, .dialog textarea { width: 100%; font: inherit; padding: 7px 8px; border: 1px solid #b9bec7; border-radius: 6px; }
+  .dialog textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; height: 110px; }
+  .dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .dialog button { font: inherit; border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; background: #dde1e7; }
+  .dialog button.primary { background: #2a6fdb; color: #fff; }
+  .drop { position: fixed; inset: 0; border: 4px dashed #2a6fdb; background: rgba(42,111,219,.12);
+    display: none; align-items: center; justify-content: center; font-size: 20px; z-index: 5; pointer-events: none; }
+  .drop.on { display: flex; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="toolbar" role="toolbar">
+  <button data-act="new" title="New ringtone">New</button>
+  <button data-act="open" title="Open .mcr or import .ott">Open…</button>
+  <button data-act="save" title="Download as .mcr">Save .mcr</button>
+  <span class="sep"></span>
+  <button data-act="ott" title="Nokia Smart Messaging ringtone">Export .ott</button>
+  <button data-act="rtttl" title="RTTTL text">RTTTL</button>
+  <button data-act="wav" title="Audio file">WAV</button>
+  <button data-act="hex" title="Smart Messaging bytes as hex">Copy hex</button>
+  <span class="sep"></span>
+  <button data-act="play" id="playBtn" title="Space">Play</button>
+  <label><input type="checkbox" id="previewOn" checked> Play notes while editing</label>
+  <button data-act="help" title="Keys">Help</button>
+</div>
+
+<div class="phone">
+  <div class="brand">MELOCREATE</div>
+  <div class="bezel"><canvas id="lcd" aria-label="MeloCreate screen"></canvas></div>
+  <div class="keypad" id="keypad"></div>
+</div>
+
+<div class="status" id="status"></div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true">
+  <form class="dialog" id="dialog">
+    <h2 id="dlgTitle"></h2>
+    <p id="dlgMsg"></p>
+    <input id="dlgInput">
+    <textarea id="dlgText" readonly></textarea>
+    <div class="row">
+      <button type="button" id="dlgCancel">Cancel</button>
+      <button type="submit" class="primary" id="dlgOk">OK</button>
+    </div>
+  </form>
+</div>
+<div class="drop" id="drop">Drop a .mcr or .ott file</div>
+<input type="file" id="fileInput" accept=".mcr,.ott,.txt">
+
+<script>
+"use strict";
+/*
+ * MeloCreate (web edition)
+ * A browser recreation of MeloCreate, the ringtone composer for Nokia Series 40
+ * phones (J2ME MIDP 1.0) written by Alan Ong in 2002-2003. No SMS sending.
+ * Plain HTML/CSS/JS, no dependencies, works from file:// or any static host.
+ */
+
+// ---------------------------------------------------------------------------
+// Constants from the original MIDlet
+// ---------------------------------------------------------------------------
+const SIZE = 128;                    // notes per ringtone
+const NOTE_MIN = 22, NOTE_MAX = 58;  // A4 (440 Hz) .. A7 (3520 Hz), sounding pitch
+const NOTE_DEFAULT = 37;             // C6, used when there is no previous note
+const TITLE_MAX = 15;
+const SMS_PAYLOAD = 133;             // 8-bit bytes in one SMS after the 7-byte port UDH
+const BPM_TABLE = [25, 28, 31, 35, 40, 45, 50, 56, 63, 70, 80, 90, 100, 112, 125,
+  140, 160, 180, 200, 225, 250, 285, 320, 355, 400, 450, 500, 565, 635, 715, 800, 900];
+const NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const NAMES_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+const DURATION_NAMES = ["whole", "half", "quarter", "eighth", "16th", "32nd"];
+const DIRECTIVE_NAMES = ["plain", "dotted", "double-dotted", "triplet"];
+const STYLE_NAMES = ["natural", "continuous", "staccato"];
+const ACCIDENTALS = [1, 3, 6, 8, 10];
+const STEPS_SHARP = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
+const STEPS_FLAT = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6];
+
+// Original sprite sheet (GUIComposer/UI/allStaff.png, 128 x 75), unchanged.
+const SPRITES_PNG = "data:image/png;base64," +
+  "iVBORw0KGgoAAAANSUhEUgAAAIAAAABLCAMAAACPz3+OAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1h" +
+  "Z2VSZWFkeXHJZTwAAAAGUExURQAAAP///6XZn90AAAACdFJOU/8A5bcwSgAAA5JJREFUeNpiYKQXYGBgwCYMEEAMdLQfqwsAAoiB" +
+  "nvZjcwFAABHnAAYqOACHOQABxECCdortx+YAgABiYKSLC3A7ACCAGBjp4gJoDGAxBCCAGBjp4gIGnGYABBADI/1cgDUXAAQQ+Q5g" +
+  "IGgUA4YDsBgLEEDkRQGIw8BIigADrqIQIIAY8BZTuB2AppygAAOuohgggIh1AIY0sTHAQAAABBDR5QBeBxCOEhQTkG0GCCAGImsO" +
+  "/EmQqCjBXigABBCxDkB3AWl5AIv90FBiAAggcrMhIfvQ8gCKA5AcxcAAEEDEF8WkOQBFOQOyg5CiH0QDBBAJlREDWTFAKBMABBAD" +
+  "7YtBBtS2AFoIAAQQmbUhCQ5gQE/uCPtBaQAggMisYchwACO2nM3AABBAtG8TwmIAPcKhPIAAYqCr/ahZA0wBBBA9HIAXAAQQA5GR" +
+  "zEAoW+DiwwMAWiWjKwAIIPIdwEAcH6ngZ0DJjFAGQABR4ACM+h4rHympITkAoRgggChxAEaLBxufAVHcIBhIKgECiGwHMGKmaex8" +
+  "dAegBR1AAJHvALQqDs0FcD6hTAAQQBQ4ALWSR6uvkPlICQ6z4QcQQJQ4gBG1ksedJpAcgGERQABR5ABGBpztfgZsLsDW8AUIIMoc" +
+  "gCdE0FwAiW4stgEEEFUdwIg7TeC0DSCAqOsA7OUAXgAQQDR0AHFJHiCAaOkALKkQ0yKAAKKpA1Ba4DhsAwgg2joAveLAYhtAAA24" +
+  "AwACiAFHZc5AbT4uBwAEEDS1og8/YIwGUMLH2wAFCCAGzP4BJh+jo0USH5cYBAAEENSz6J1XjM48+XyUBhEmAAggBsxqBKNaoTAA" +
+  "GPA6ACCAGGifAhjgjWJskQAQQAwkNHDJ5zNgH7YBAYAAok/PCL1RjAQAAoiBRn7GkQYwHQAQQHQoB/A7ACCA6FAOIDkAS4QDBBAd" +
+  "ygF4LsBaEgEEED3KAbyjsAABRPNygAF77oMDgADCDBpqV4WM+B0AEECESwZK+QSm3AACiA4OwA8AAohWDiDaGQABRCMHED/BBBBA" +
+  "tHEACRNcAAFEEweQMsEGEEDUcgChXiFOABBAVHIAnrESAgAggMh1ALEjAwQBQACR6QBix0YIA4AAIs8BxI4OEQEAAogsBxA3PkYc" +
+  "AAggchxA7AghUQAggMhwALFjpMQBgAAizwFEjRITBwACiCwHkMQnAAACiBwHkMYnAAACiG4LmXABgAADAJ1iIGN3kPBTAAAAAElF" +
+  "TkSuQmCC";
+
+const playBpmIndex = (tempo) => { const i = BPM_TABLE.findIndex((b) => tempo <= b); return i < 0 ? BPM_TABLE.length - 1 : i; };
+const playBpm = (tempo) => BPM_TABLE[playBpmIndex(tempo)];
+const noteFreq = (n) => 440 * Math.pow(2, (n - 22) / 12);          // note 22 = A4
+const noteSeconds = (tempo, d, dr) => (4 * 60 / playBpm(tempo) / (1 << d)) * [1, 1.5, 1.75, 2 / 3][Math.max(0, dr)];
+
+function noteLabel(d, dr, n, sharp) {        // Editor.getSelectedToString, e.g. "4C#", "8.A", "16P"
+  let v = 1 << Math.max(0, d);
+  if (dr === 3) v = Math.floor(v * 3 / 2);
+  let t = String(v);
+  if (dr === 2) t += ".."; else if (dr === 1) t += ".";
+  return t + (n > 0 ? (sharp ? NAMES_SHARP : NAMES_FLAT)[(n - 1) % 12] : "P");
+}
+
+// ---------------------------------------------------------------------------
+// Ringtone model (GUIComposer.Data.Ringtone)
+// duration 0..5, directive 0..3, note 0 = rest / 22..58, style 0..2; -1 = empty
+// ---------------------------------------------------------------------------
+class Ringtone {
+  constructor() { this.clear(); }
+  clear() {
+    this.title = "Untitled"; this.tempo = 120; this.index = 0;
+    this.dur = new Array(SIZE).fill(-1); this.dirv = new Array(SIZE).fill(-1);
+    this.note = new Array(SIZE).fill(-1); this.style = new Array(SIZE).fill(-1);
+  }
+  get(i) {
+    if (i < 0 || i >= SIZE) return [-1, -1, -1, -1];
+    return [this.dur[i], this.dirv[i], this.note[i], this.style[i]];
+  }
+  set(i, d = -1, dr = -1, n = -1, s = -1) {     // like the original: only fields > -1 are written
+    if (i < 0 || i >= SIZE) return;
+    if (d > -1) this.dur[i] = d;
+    if (dr > -1) this.dirv[i] = dr;
+    if (n > -1) this.note[i] = n;
+    if (s > -1) this.style[i] = s;
+  }
+  setIndex(i) { if (i >= 0 && i < SIZE) this.index = i; }
+  lastIndex() { for (let i = SIZE - 1; i >= 0; i--) if (this.dur[i] >= 0) return i; return 0; }
+  count() { return this.dur.filter((d) => d >= 0).length; }
+  isEmpty() { return this.count() === 0; }
+  arrays() { return [this.dur, this.dirv, this.note, this.style]; }
+  insert(i) {
+    if (i >= 0 && i < SIZE && this.dur[i] !== -1)
+      for (const a of this.arrays()) { a.splice(i, 0, -1); a.pop(); }
+  }
+  delete(i) {
+    if (i >= 0 && i < SIZE)
+      for (const a of this.arrays()) { a.splice(i, 1); a.push(-1); }
+  }
+  trim() {                    // close gaps left by Insert, except the one under the cursor
+    let i = 0;
+    while (i < this.lastIndex()) {
+      if (this.dur[i] === -1 && i !== this.index) {
+        this.delete(i);
+        if (i < this.index) this.index--;
+      } else i++;
+    }
+  }
+  entries() {
+    const out = [];
+    for (let i = 0; i < SIZE; i++)
+      if (this.dur[i] >= 0)
+        out.push([i, this.dur[i], Math.max(0, this.dirv[i]), Math.max(0, this.note[i]), Math.max(0, this.style[i])]);
+    return out;
+  }
+  toRecord() {               // the original RMS record string
+    let r = `${this.title.replace(/;/g, ",") || "Untitled"};${this.tempo};`;
+    for (let i = 0; i < SIZE; i++) r += `${this.dur[i]},${this.dirv[i]},${this.note[i]},${this.style[i]};`;
+    return r;
+  }
+  static fromRecord(rec) {
+    const rt = new Ringtone();
+    const f = rec.trim().split(";");
+    if (f.length < 2 || isNaN(parseInt(f[1], 10))) throw new Error("not a MeloCreate record");
+    rt.title = f[0].slice(0, TITLE_MAX) || "Untitled";
+    rt.tempo = Math.max(1, parseInt(f[1], 10));
+    f.slice(2, 2 + SIZE).forEach((item, i) => {
+      if (!item) return;
+      const v = item.split(",").map((x) => parseInt(x, 10));
+      if (v.length !== 4 || v.some(isNaN)) throw new Error(`bad entry ${i + 1}`);
+      [rt.dur[i], rt.dirv[i], rt.note[i], rt.style[i]] = v;
+    });
+    return rt;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nokia Smart Messaging ringtone (GUIComposer.Data.NokiaRingtone)
+// ---------------------------------------------------------------------------
+const noteScale = (n) => Math.floor((n - 13) / 12);         // 0..3 = scale-1..scale-4
+const noteValue = (n) => (n <= 0 ? 0 : (n - 1) % 12 + 1);    // 0 pause, 1 C .. 12 B
+
+class BitWriter {
+  constructor() { this.bits = []; }
+  add(value, width) { for (let k = width - 1; k >= 0; k--) this.bits.push((value >> k) & 1); }
+  align() { while (this.bits.length % 8) this.bits.push(0); }
+  bytes() {
+    this.align();
+    const out = new Uint8Array(this.bits.length / 8);
+    for (let i = 0; i < out.length; i++) {
+      let b = 0;
+      for (let k = 0; k < 8; k++) b = (b << 1) | this.bits[i * 8 + k];
+      out[i] = b;
+    }
+    return out;
+  }
+}
+
+class BitReader {
+  constructor(data) { this.data = data; this.pos = 0; }
+  read(width) {
+    let v = 0;
+    for (let k = 0; k < width; k++) {
+      const byte = this.data[this.pos >> 3];
+      if (byte === undefined) throw new Error("file ends too early");
+      v = (v << 1) | ((byte >> (7 - (this.pos & 7))) & 1);
+      this.pos++;
+    }
+    return v;
+  }
+}
+
+// The 2003 MIDlet sent a "temporary" song with no title; by default this writes a
+// "basic" song carrying the title. withTitle=false gives the original layout.
+function encodeOtt(rt, withTitle = true) {
+  const ins = [[[4, 3], [playBpmIndex(rt.tempo), 5]],   // tempo
+               [[5, 3], [15, 4]]];                       // volume: max
+  let scale = null, style = null;
+  for (const [, d, dr, n, s] of rt.entries()) {
+    if (n > 0 && noteScale(n) !== scale) { scale = noteScale(n); ins.push([[2, 3], [scale, 2]]); }
+    if (s !== style) { style = s; ins.push([[3, 3], [s, 2]]); }
+    ins.push([[1, 3], [noteValue(n), 4], [d, 3], [dr, 2]]);
+  }
+  const patterns = [];
+  for (let i = 0; i < ins.length && patterns.length < 4; i += 255) patterns.push(ins.slice(i, i + 255));
+
+  const bw = new BitWriter();
+  bw.add(2, 8);              // command length
+  bw.add(0b0100101, 7);      // ringing tone programming
+  bw.add(0, 1);              // filler
+  bw.add(0b0011101, 7);      // sound
+  const title = withTitle ? latin1(rt.title).slice(0, TITLE_MAX) : [];
+  if (title.length) {
+    bw.add(0b001, 3);        // basic song (with title)
+    bw.add(title.length, 4);
+    title.forEach((c) => bw.add(c, 8));
+  } else {
+    bw.add(0b010, 3);        // temporary song (no title)
+  }
+  bw.add(patterns.length, 8);
+  patterns.forEach((p, pid) => {
+    bw.add(0, 3); bw.add(pid, 2); bw.add(0, 4); bw.add(p.length, 8);
+    p.forEach((instr) => instr.forEach(([v, w]) => bw.add(v, w)));
+  });
+  bw.align();
+  bw.add(0, 8);              // command end
+  return bw.bytes();
+}
+
+function latin1(str) { return Array.from(str, (ch) => { const c = ch.charCodeAt(0); return c < 256 ? c : 63; }); }
+
+function decodeOtt(data) {
+  const br = new BitReader(data);
+  const rt = new Ringtone();
+  rt.title = "Imported";
+  const ncmd = br.read(8);
+  let found = false;
+  for (let k = 0; k < Math.max(1, ncmd); k++) {
+    const cmd = br.read(7);
+    if (cmd === 0b0100101) { br.read(1); continue; }
+    if (cmd === 0b0011101) { found = true; break; }
+    if (cmd === 0b0100010) throw new Error("Unicode ringtone titles are not supported");
+    throw new Error("this is not a Nokia ringtone");
+  }
+  if (!found) throw new Error("no sound command found");
+  const songType = br.read(3);
+  if (songType === 0b001) {
+    const len = br.read(4);
+    let t = "";
+    for (let k = 0; k < len; k++) t += String.fromCharCode(br.read(8));
+    rt.title = t || "Imported";
+  } else if (songType !== 0b010) throw new Error("only basic and temporary songs are supported");
+  const np = br.read(8);
+  let i = 0, scale = 1, style = 0;
+  for (let p = 0; p < np; p++) {
+    if (br.read(3) !== 0) throw new Error("bad pattern header");
+    br.read(2); br.read(4);
+    const count = br.read(8);
+    for (let c = 0; c < count; c++) {
+      const op = br.read(3);
+      if (op === 1) {
+        const value = br.read(4), d = br.read(3), dr = br.read(2);
+        if (i < SIZE && d <= 5) {
+          let n = 0;
+          if (value >= 1 && value <= 12) {
+            n = 13 + scale * 12 + (value - 1);
+            while (n < NOTE_MIN) n += 12;
+            while (n > NOTE_MAX) n -= 12;
+          }
+          rt.dur[i] = d; rt.dirv[i] = dr; rt.note[i] = n; rt.style[i] = style; i++;
+        }
+      } else if (op === 2) scale = br.read(2);
+      else if (op === 3) style = Math.min(2, br.read(2));
+      else if (op === 4) rt.tempo = BPM_TABLE[br.read(5)];
+      else if (op === 5) br.read(4);
+      else throw new Error("unknown instruction in ringtone");
+    }
+  }
+  return rt;
+}
+
+function toRtttl(rt) {
+  const name = (rt.title.replace(/[:,]/g, "") || "MeloCreate").slice(0, 10);
+  const tokens = rt.entries().map(([, d, dr, n]) => {
+    let t = String(1 << d);
+    t += n > 0 ? NAMES_SHARP[(n - 1) % 12].toLowerCase() + (Math.floor((n - 1) / 12) + 3) : "p";
+    if (dr === 1 || dr === 2) t += ".";       // RTTTL has a single dot only
+    return t;
+  });
+  return `${name}:d=4,o=5,b=${playBpm(rt.tempo)}:${tokens.join(",")}`;
+}
+
+const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+// ---------------------------------------------------------------------------
+// Sound (Web Audio square wave, like a phone buzzer)
+// ---------------------------------------------------------------------------
+const VOLUME = 0.12;
+let audioCtx = null;
+let liveNodes = [];
+
+function audio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function timeline(rt) {
+  const items = [];
+  let t = 0;
+  for (const [i, d, dr, n, s] of rt.entries()) {
+    const len = noteSeconds(rt.tempo, d, dr);
+    items.push({ i, t, len, n, sound: len * [0.9, 1.0, 0.5][s] });
+    t += len;
+  }
+  return items;
+}
+
+function scheduleTone(ctx, dest, freq, start, seconds) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "square";
+  osc.frequency.value = freq;
+  const ramp = Math.min(0.003, seconds / 4);
+  g.gain.setValueAtTime(0, start);
+  g.gain.linearRampToValueAtTime(VOLUME, start + ramp);
+  g.gain.setValueAtTime(VOLUME, start + seconds - ramp);
+  g.gain.linearRampToValueAtTime(0, start + seconds);
+  osc.connect(g).connect(dest);
+  osc.start(start);
+  osc.stop(start + seconds + 0.02);
+  return osc;
+}
+
+function stopSound() {
+  for (const osc of liveNodes) { try { osc.stop(); osc.disconnect(); } catch (e) { /* already stopped */ } }
+  liveNodes = [];
+}
+
+function previewTone(n) {
+  const ctx = audio();
+  if (!ctx) return;
+  stopSound();
+  liveNodes.push(scheduleTone(ctx, ctx.destination, noteFreq(n), ctx.currentTime + 0.01, 0.3));
+}
+
+function playTune(items) {
+  const ctx = audio();
+  if (!ctx) return null;
+  stopSound();
+  const t0 = ctx.currentTime + 0.06;
+  for (const it of items) if (it.n > 0) liveNodes.push(scheduleTone(ctx, ctx.destination, noteFreq(it.n), t0 + it.t, it.sound));
+  return t0;
+}
+
+async function renderWav(rt) {
+  const items = timeline(rt);
+  const total = items.length ? items[items.length - 1].t + items[items.length - 1].len + 0.05 : 0.1;
+  const rate = 22050;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ctx = new OAC(1, Math.ceil(total * rate), rate);
+  for (const it of items) if (it.n > 0) scheduleTone(ctx, ctx.destination, noteFreq(it.n), it.t, it.sound);
+  const buf = await ctx.startRendering();
+  const pcm = buf.getChannelData(0);
+  const out = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const str = (o, s) => { for (let k = 0; k < s.length; k++) out.setUint8(o + k, s.charCodeAt(k)); };
+  str(0, "RIFF"); out.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVE");
+  str(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+  str(36, "data"); out.setUint32(40, pcm.length * 2, true);
+  for (let k = 0; k < pcm.length; k++) out.setInt16(44 + k * 2, Math.max(-1, Math.min(1, pcm[k] * 2)) * 32767, true);
+  return new Blob([out.buffer], { type: "audio/wav" });
+}
+
+// ---------------------------------------------------------------------------
+// Storage: phone slots (the RMS record store) and the work in progress
+// ---------------------------------------------------------------------------
+const SLOTS_KEY = "melocreate.slots", CURRENT_KEY = "melocreate.current";
+function loadSlots() { try { return JSON.parse(localStorage.getItem(SLOTS_KEY) || "[]").map(String); } catch (e) { return []; } }
+function saveSlots(r) { localStorage.setItem(SLOTS_KEY, JSON.stringify(r)); }
+function remember() { try { localStorage.setItem(CURRENT_KEY, rt.toRecord()); } catch (e) { /* storage may be off */ } }
+
+// ---------------------------------------------------------------------------
+// Help text (the original HelpDoc screens, plus the computer keys)
+// ---------------------------------------------------------------------------
+const HELP_EDITOR = `To enter staff
+/change duration:
+ FIRE(5)
+
+Change note:
+ UP(2)/DOWN(8)
+
+Navigate:
+ LEFT(4)/RIGHT(6)
+
+Insert:
+ press & hold
+ ZERO(0)
+
+Sharp/Flat:
+ press & hold
+ POUND(#)
+
+Treble/Base clef:
+ press & hold
+ STAR(*)
+
+First/Last note:
+ press & hold
+ ONE(1)/SEVEN(7)
+
+On the computer:
+ Arrows = 2/4/6/8
+ Enter = 5 (FIRE)
+ Hold a key for the
+ press & hold actions.
+ Q or F1 = left soft key
+ W or F2 = right soft key
+ Esc = back
+ Space = play/stop
+ Ins/Del/Backspace
+ = Insert/Delete/Clear
+ Mouse wheel = pitch`;
+
+const HELP_DURATION = `Select & back to Editor:
+ FIRE(5)/Select
+
+Navigate:
+ LEFT(4)/RIGHT(6)
+/UP(2)/DOWN(8)
+
+Dotted/Triplet:
+ POUND(#)
+
+Cont/Stac:
+ STAR(*)
+
+Top row: rests
+Bottom row: notes
+Esc = cancel`;
+
+// ---------------------------------------------------------------------------
+// Application state
+// ---------------------------------------------------------------------------
+const LW = 240, LH = 128, SOFT_H = 14, FONT_H = 11, ROW_H = 15;
+const FONT = "Helvetica, Arial, sans-serif";
+const RED = "#ff0000", GUIDE = "#e2e2e2";
+const HOLD_MS = 500, REPEAT_MS = 110;
+const NAV = new Set(["UP", "DOWN", "LEFT", "RIGHT"]);
+const GAME = { 2: "UP", 8: "DOWN", 4: "LEFT", 6: "RIGHT", 5: "FIRE", UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT", FIRE: "FIRE" };
+
+let rt = new Ringtone();
+let records = loadSlots();
+let dirty = false;
+let fileName = null;
+
+const ed = { treble: true, sharp: true, start: 0, previewUntil: 0 };
+const pk = { x: 0, y: 0, directive: 0, style: 0 };
+const play = { on: false, t0: 0, items: [], index: -1 };
+let screen = "editor";
+let listState = null, helpState = null, alertText = null, alertTimer = null;
+
+const canvas = document.getElementById("lcd");
+const ctx = canvas.getContext("2d");
+const sheet = new Image();
+sheet.onload = () => refresh();
+sheet.src = SPRITES_PNG;
+let S = 3, DPR = 1;
+
+// ---------------------------------------------------------------------------
+// Keys: keyboard, on-screen keypad and touch share one hold mechanism
+// ---------------------------------------------------------------------------
+const down = new Map();       // tag -> timer id (or 0 once the hold has fired)
+
+function press(tag, key) {
+  if (down.has(tag)) return;
+  down.set(tag, setTimeout(() => hold(tag, key), HOLD_MS));
+  keyPressed(key);
+}
+function release(tag) {
+  const t = down.get(tag);
+  if (t) clearTimeout(t);
+  down.delete(tag);
+}
+function hold(tag, key) {
+  if (!down.has(tag)) return;
+  keyRepeated(key);
+  down.set(tag, NAV.has(GAME[key]) ? setTimeout(() => hold(tag, key), REPEAT_MS) : 0);
+}
+
+function mapKey(e) {
+  const named = { ArrowUp: "UP", ArrowDown: "DOWN", ArrowLeft: "LEFT", ArrowRight: "RIGHT", Enter: "FIRE",
+    F1: "SOFT1", F2: "SOFT2", Escape: "BACK", q: "SOFT1", Q: "SOFT1", w: "SOFT2", W: "SOFT2" };
+  if (e.code === "NumpadDivide") return "#";
+  if (e.code === "NumpadMultiply") return "*";
+  if (named[e.key]) return named[e.key];
+  if (e.key.length === 1 && "0123456789*#".includes(e.key)) return e.key;
+  return null;
+}
+
+function modalOpen() { return document.getElementById("modal").classList.contains("open"); }
+
+document.addEventListener("keydown", (e) => {
+  if (modalOpen()) return;
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (k === "s") { e.preventDefault(); act("save"); }
+    else if (k === "o") { e.preventDefault(); act("open"); }
+    return;
+  }
+  if (e.altKey) return;
+  const key = mapKey(e);
+  if (key) {
+    e.preventDefault();
+    if (!e.repeat) press("kb:" + key, key);
+    return;
+  }
+  if (e.key === " ") { e.preventDefault(); if (!e.repeat) togglePlay(); }
+  else if (screen === "editor" && e.key === "Insert") cmd("Insert");
+  else if (screen === "editor" && e.key === "Delete") cmd("Delete");
+  else if (screen === "editor" && e.key === "Backspace") { e.preventDefault(); cmd("Clear"); }
+});
+document.addEventListener("keyup", (e) => { const key = mapKey(e); if (key) release("kb:" + key); });
+window.addEventListener("blur", () => { for (const tag of [...down.keys()]) release(tag); });
+
+// ---------------------------------------------------------------------------
+// Key dispatch per screen (keyPressed / keyRepeated of each Canvas)
+// ---------------------------------------------------------------------------
+function keyPressed(key) {
+  if (alertText) { dismissAlert(); return; }
+  const ga = GAME[key];
+  if (screen === "editor") {
+    if (key === "SOFT1") openOptions();
+    else if (key === "SOFT2") openMenu();
+    else if (ga) editorAction(ga);
+  } else if (screen === "duration") {
+    if (key === "SOFT1" || ga === "FIRE") durationSelect();
+    else if (key === "SOFT2") showHelp(HELP_DURATION, "duration");
+    else if (key === "BACK") screen = "editor";
+    else if (key === "#") pk.directive = (pk.directive + 1) % 4;
+    else if (key === "*") pk.style = (pk.style + 1) % 3;
+    else if (NAV.has(ga)) durationMove(ga);
+  } else if (screen === "list") listKey(key, ga);
+  else if (screen === "help") {
+    if (key === "SOFT2" || key === "BACK" || key === "SOFT1" || ga === "FIRE") screen = helpState.back;
+    else if (ga === "UP" || ga === "DOWN") helpScroll(ga === "UP" ? -1 : 1);
+  }
+  refresh();
+}
+
+function keyRepeated(key) {
+  const ga = GAME[key];
+  if (screen === "editor") {
+    if (NAV.has(ga)) editorAction(ga);
+    else if (key === "1") { rt.setIndex(0); afterMove(); }
+    else if (key === "7") { rt.setIndex(rt.isEmpty() ? 0 : Math.min(SIZE - 1, rt.lastIndex() + 1)); afterMove(); }
+    else if (key === "0") cmd("Insert");
+    else if (key === "*") ed.treble = !ed.treble;
+    else if (key === "#") ed.sharp = !ed.sharp;
+  } else if (screen === "duration" && NAV.has(ga)) durationMove(ga);
+  else if (screen === "list" && (ga === "UP" || ga === "DOWN")) listKey(key, ga);
+  else if (screen === "help" && (ga === "UP" || ga === "DOWN")) helpScroll(ga === "UP" ? -1 : 1);
+  refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Editor behaviour (Editor.directionKeyAction / commandAction)
+// ---------------------------------------------------------------------------
+function editorAction(ga) {
+  const i = rt.index;
+  if (ga === "FIRE") { stopPlay(); openDuration(); }
+  else if (ga === "RIGHT") { if (rt.get(i)[0] !== -1 || rt.get(i + 1)[0] !== -1) changeIndex(1); }
+  else if (ga === "LEFT") changeIndex(-1);
+  else if (ga === "UP") changeNote(1);
+  else if (ga === "DOWN") changeNote(-1);
+}
+function changeIndex(d) { rt.setIndex(rt.index + d); rt.trim(); afterMove(); }
+function afterMove() { previewNote(); }
+function changeNote(d) {
+  const n = rt.get(rt.index)[2];
+  if (n <= 0) return;
+  const m = n + d;
+  if (m >= NOTE_MIN && m <= NOTE_MAX) { stopPlay(); rt.set(rt.index, -1, -1, m, -1); touch(); }
+  previewNote();
+}
+
+function cmd(name) {
+  if (name === "Duration") { stopPlay(); openDuration(); return; }
+  if (name === "Insert") {
+    if (rt.get(SIZE - 1)[0] !== -1) showAlert("Ringtone is full\n(128 notes)");
+    else { rt.insert(rt.index); touch(); }
+  } else if (name === "Delete") { rt.delete(rt.index); touch(); }
+  else if (name === "Clear") {                 // the original Clear works like backspace
+    if (rt.index > 0) { rt.index--; rt.delete(rt.index); touch(); }
+  } else if (name === "Play" || name === "Stop") togglePlay();
+  else if (name === "More") { openMenu(); return; }
+  else if (name === "Help") { showHelp(HELP_EDITOR); return; }
+  screen = "editor";
+  refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Duration picker (DurationEdit)
+// ---------------------------------------------------------------------------
+function openDuration() {
+  const i = rt.index;
+  let [d, dr, n, s] = rt.get(i);
+  if (n < 0) { const p = rt.get(i - 1); d = p[0]; n = p[2]; }
+  if (d >= 0 && d < 6) pk.x = d;
+  pk.y = n > 0 ? 1 : 0;
+  if (dr < 0) dr = rt.get(i - 1)[1];
+  if (s < 0) s = rt.get(i - 1)[3];
+  pk.directive = Math.max(0, dr);
+  pk.style = Math.max(0, s);
+  screen = "duration";
+  refresh();
+}
+function durationMove(ga) {
+  const [dx, dy] = { LEFT: [-1, 0], RIGHT: [1, 0], UP: [0, -1], DOWN: [0, 1] }[ga];
+  if (pk.x + dx >= 0 && pk.x + dx < 6) pk.x += dx;
+  if (pk.y + dy >= 0 && pk.y + dy < 2) pk.y += dy;
+}
+function durationSelect() {
+  const i = rt.index;
+  let n = rt.get(i)[2];
+  if (n <= 0) { n = rt.get(i - 1)[2]; if (n <= 0) n = NOTE_DEFAULT; }
+  rt.set(i, pk.x, pk.directive, n * pk.y, pk.style);
+  touch();
+  screen = "editor";
+  previewNote();
+}
+
+// ---------------------------------------------------------------------------
+// Lists: Options, Menu, Save/Load slots
+// ---------------------------------------------------------------------------
+function openList(title, items, onSelect, soft = ["Select", "Back"]) {
+  listState = { title, items, sel: 0, top: 0, onSelect, soft };
+  screen = "list";
+  refresh();
+}
+function listKey(key, ga) {
+  const st = listState;
+  if (key === "SOFT2" || key === "BACK") screen = "editor";
+  else if (key === "SOFT1" || ga === "FIRE") st.onSelect(st.sel);
+  else if (ga === "UP") st.sel = (st.sel - 1 + st.items.length) % st.items.length;
+  else if (ga === "DOWN") st.sel = (st.sel + 1) % st.items.length;
+}
+function openOptions() {
+  const items = ["Duration", "Insert", "Delete", "Clear", play.on ? "Stop" : "Play", "More", "Help"];
+  openList("Options", items, (k) => cmd(items[k]));
+}
+function openMenu() {
+  openList("Menu", ["Title", "Tempo", "Save", "Load"], (k) => {
+    screen = "editor";
+    [editTitle, editTempo, menuSave, menuLoad][k]();
+  });
+}
+const slotTitles = () => records.map((r) => r.split(";", 1)[0] || "Untitled");
+function menuSave() {
+  openList("Save", [...slotTitles(), "-Empty-"], (k) => {
+    const rec = rt.toRecord();
+    const copy = records.slice();
+    if (k < copy.length) copy[k] = rec; else copy.push(rec);
+    screen = "editor";
+    try { saveSlots(copy); records = copy; showAlert("Saved"); } catch (e) { showAlert("Not saved"); }
+  });
+}
+function menuLoad() {
+  records = loadSlots();
+  if (!records.length) { screen = "editor"; showAlert("Nothing saved yet"); return; }
+  openList("Load", slotTitles(), (k) => {
+    if (!confirmDiscard()) return;
+    try { setTune(Ringtone.fromRecord(records[k]), null); } catch (e) { showAlert("Record is damaged"); }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Help, alerts, title and tempo
+// ---------------------------------------------------------------------------
+function showHelp(text, back) {
+  stopPlay();
+  helpState = { lines: text.split("\n"), top: 0, back: back || (screen === "duration" ? "duration" : "editor") };
+  screen = "help";
+  refresh();
+}
+function helpScroll(d) {
+  const visible = Math.floor((LH - 18) / 11);
+  helpState.top = Math.max(0, Math.min(helpState.lines.length - visible, helpState.top + d));
+}
+function showAlert(text, ms = 1400) {
+  alertText = text;
+  clearTimeout(alertTimer);
+  alertTimer = setTimeout(dismissAlert, ms);
+  refresh();
+}
+function dismissAlert() { alertText = null; clearTimeout(alertTimer); refresh(); }
+
+async function editTitle() {
+  const v = await ask({ title: "Title", message: `Up to ${TITLE_MAX} characters.`, value: rt.title, maxLength: TITLE_MAX });
+  if (v !== null) { rt.title = v.replace(/;/g, ",").trim().slice(0, TITLE_MAX) || "Untitled"; touch(); }
+  screen = "editor"; refresh();
+}
+async function editTempo() {
+  const v = await ask({ title: "Tempo", message: "Beats per minute, 25–900.\nPhones play the next value up in the Smart Messaging table.",
+    value: String(rt.tempo), type: "number", min: 25, max: 900 });
+  if (v !== null) {
+    const t = parseInt(v, 10);
+    if (t >= 25 && t <= 900) { rt.tempo = t; touch(); } else showAlert("Tempo must be\n25 to 900");
+  }
+  screen = "editor"; refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Playback
+// ---------------------------------------------------------------------------
+function previewNote() {
+  const [, , n] = rt.get(rt.index);
+  if (n < 0 || play.on) { ed.previewUntil = 0; return; }
+  ed.previewUntil = performance.now() + 800;
+  if (n > 0 && document.getElementById("previewOn").checked) previewTone(n);
+}
+function togglePlay() { if (play.on) stopPlay(); else startPlay(); refresh(); }
+function startPlay() {
+  if (rt.isEmpty()) { showAlert("Nothing to play"); return; }
+  play.items = timeline(rt);
+  const t0 = playTune(play.items);
+  if (t0 === null) { showAlert("This browser has\nno Web Audio"); return; }
+  play.on = true; play.t0 = t0; play.index = -1;
+  requestAnimationFrame(playTick);
+}
+function playTick() {
+  if (!play.on) return;
+  const t = audioCtx.currentTime - play.t0;
+  const last = play.items[play.items.length - 1];
+  if (t >= last.t + last.len) { stopPlay(); refresh(); return; }
+  const cur = play.items.find((it) => t >= it.t && t < it.t + it.len);
+  const idx = cur ? cur.i : play.index;
+  if (idx !== play.index || Math.floor(t) !== play.sec) { play.index = idx; play.sec = Math.floor(t); refresh(); }
+  requestAnimationFrame(playTick);
+}
+function stopPlay() {
+  if (play.on) stopSound();
+  play.on = false; play.index = -1;
+}
+setInterval(() => { if (ed.previewUntil && performance.now() > ed.previewUntil) { ed.previewUntil = 0; refresh(); } }, 200);
+
+// ---------------------------------------------------------------------------
+// Drawing (logical 240 x 142 coordinates; the original phone screen was 128 x 128)
+// ---------------------------------------------------------------------------
+function resize() {
+  // whole multiples look crispest on a computer; phones use whatever width there is
+  const avail = Math.min(window.innerWidth - 36, 760);
+  const fit = Math.max(1, Math.min(3, avail / LW));
+  S = window.innerWidth >= 600 ? Math.max(2, Math.floor(fit)) : fit;
+  DPR = window.devicePixelRatio || 1;
+  canvas.style.width = LW * S + "px";
+  canvas.style.height = (LH + SOFT_H) * S + "px";
+  canvas.width = Math.round(LW * S * DPR);
+  canvas.height = Math.round((LH + SOFT_H) * S * DPR);
+  refresh();
+}
+window.addEventListener("resize", resize);
+
+function rect(x, y, w, h, color = "#000") { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); }
+function text(x, y, str, { align = "left", base = "top", size = 10, bold = false, color = "#000" } = {}) {
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = base;
+  ctx.font = `${bold ? "bold " : ""}${size}px ${FONT}`;
+  ctx.fillText(str, x, y);
+}
+function sprite(sx, sy, w, h, dx, dy) { if (sheet.complete) ctx.drawImage(sheet, sx, sy, w, h, dx, dy, w, h); }
+
+function refresh() {
+  if (!canvas.width) return;
+  ctx.setTransform(S * DPR, 0, 0, S * DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  rect(0, 0, LW, LH + SOFT_H, "#fff");
+  let soft;
+  if (screen === "editor") { drawEditor(); soft = ["Options", "Menu"]; }
+  else if (screen === "duration") { drawDuration(); soft = ["Select", "Help"]; }
+  else if (screen === "list") { drawList(); soft = listState.soft; }
+  else { drawHelp(); soft = ["", "Back"]; }
+  rect(0, LH, LW, 1 / S);
+  text(3, LH + SOFT_H / 2, soft[0], { base: "middle", bold: true });
+  text(LW - 3, LH + SOFT_H / 2, soft[1], { align: "right", base: "middle", bold: true });
+  document.querySelectorAll(".k.soft").forEach((el, k) => { el.textContent = soft[k] || " "; });
+  if (alertText) drawAlert();
+  updateStatus();
+}
+
+function visibleNotes() {        // Editor.drawManyNotes scrolling
+  const count = Math.floor((LW - 10) / 23);
+  const focus = play.on && play.index >= 0 ? play.index : rt.index;
+  if (focus < ed.start) ed.start = focus;
+  const visible = ed.start === 0 ? count - 1 : count;
+  if (focus >= ed.start + visible) ed.start = Math.max(1, focus - count + 1);
+  let off = 10, n = count;
+  if (ed.start === 0) { n--; off += 16; }
+  const out = [];
+  for (let k = 0; k < n; k++) if (ed.start + k < SIZE) out.push([ed.start + k, 23 * k + off]);
+  return out;
+}
+
+function drawEditor() {
+  const base = LH - 36;                 // middle staff line
+  let y = LH;
+  for (let i = 0; i < 12; i++) {        // grey guides and the black five-line staff
+    y -= 6;
+    if (y <= FONT_H) break;
+    rect(0, y, LW, 3 <= i && i < 8 ? 1 : 1 / S, 3 <= i && i < 8 ? "#000" : GUIDE);
+  }
+  const notes = visibleNotes();
+  if (ed.start === 0) sprite(ed.treble ? 96 : 112, 0, 16, 45, 0, base - 24);
+  for (const [idx, x] of notes) {
+    if (play.on && idx === play.index) rect(x - 9, FONT_H + 1, 20, LH - FONT_H - 2, "#dce8fb");
+    drawNote(idx, x, base);
+    if (idx === rt.index) for (let yy = FONT_H; yy < LH; yy += 2) rect(x - 3, yy, 1, 1, RED);   // dotted cursor
+  }
+  let head;
+  const now = performance.now();
+  if (play.on) head = "E:" + Math.max(0, Math.floor(audioCtx.currentTime - play.t0));
+  else if (ed.previewUntil && now <= ed.previewUntil) { const [d, dr, n] = rt.get(rt.index); head = "N:" + noteLabel(d, dr, n, ed.sharp); }
+  else head = rt.title;
+  rect(0, 0, LW, FONT_H, "#fff");
+  text(1, 0, head);
+  const last = rt.isEmpty() ? 1 : rt.lastIndex() + 1;
+  text(LW - 1, 0, `T:${rt.tempo} ${rt.index + 1}/${Math.max(last, rt.index + 1)}`, { align: "right" });
+}
+
+const anchorY = (o) => 11 + [13, 20, 3][o];
+
+function drawNote(idx, x, base) {
+  const [d, dr, n, s] = rt.get(idx);
+  if (d < 0) return;
+  let y = base, o = 0;
+  if (n > 0) {
+    const octave = Math.floor((n - 1) / 12), semi = (n - 1) % 12;
+    y = base + (ed.treble ? 60 : 66) - octave * 21 - 3 * (ed.sharp ? STEPS_SHARP : STEPS_FLAT)[semi];
+    if (ACCIDENTALS.includes(semi)) sprite(ed.sharp ? 96 : 104, 45, 8, 13, x - 10, y - 5);
+    o = y > base ? 1 : 2;
+  }
+  drawGlyph(x - 3, y - anchorY(o), d, o, Math.max(0, dr), Math.max(0, s));
+}
+
+function drawGlyph(xl, yt, d, o, directive, style) {     // Img.getNotes: a 16 x 48 cell
+  sprite(16 * d, 25 * o, 16, 25, xl, yt + 11);
+  const ay = anchorY(o);
+  if (directive === 1 || directive === 2) rect(xl + 11, yt + ay - 3, 2, 2);
+  if (directive === 2) rect(xl + 14, yt + ay - 3, 2, 2);
+  if (directive === 3) text(xl + 3, yt + [ay + 12, ay + 5, ay - 3 - FONT_H][o], "3");
+  if (style && o) {
+    const y6 = o === 1 ? ay + 5 : ay - 6;
+    if (style === 1) rect(xl + 1, yt + y6, 8, 2);       // continuous: a bar
+    else rect(xl + 3, yt + y6, 3, 2);                    // staccato: a dot
+  }
+}
+
+function drawDuration() {
+  const tx = (LW - 96) / 2, ty = LH / 2 - 47;
+  for (let x = 0; x < 6; x++) for (let y = 0; y < 2; y++) drawGlyph(tx + 16 * x, ty + 47 * y, x, y, pk.directive, pk.style);
+  ctx.strokeStyle = RED;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tx + 16 * pk.x + 0.5, ty + 47 * pk.y + 0.5, 15, 46);
+  let desc = `${DURATION_NAMES[pk.x]} ${pk.y ? "note" : "rest"}`;
+  if (pk.directive) desc += `, ${DIRECTIVE_NAMES[pk.directive]}`;
+  if (pk.style && pk.y) desc += `, ${STYLE_NAMES[pk.style]}`;
+  text(LW / 2, 1, desc, { align: "center" });
+}
+
+function drawList() {
+  const st = listState;
+  text(LW / 2, 2, st.title, { align: "center", bold: true });
+  rect(0, 16, LW, 1 / S);
+  const rows = Math.floor((LH - 20) / ROW_H);
+  if (st.sel < st.top) st.top = st.sel;
+  if (st.sel >= st.top + rows) st.top = st.sel - rows + 1;
+  for (let r = 0; r < rows; r++) {
+    const k = st.top + r;
+    if (k >= st.items.length) break;
+    const y = 18 + ROW_H * r, sel = k === st.sel;
+    if (sel) rect(0, y, LW, ROW_H);
+    text(6, y + ROW_H / 2, `${k + 1}. ${st.items[k]}`, { base: "middle", color: sel ? "#fff" : "#000" });
+  }
+}
+
+function drawHelp() {
+  const st = helpState;
+  text(LW / 2, 2, "Help", { align: "center", bold: true });
+  rect(0, 16, LW, 1 / S);
+  const visible = Math.floor((LH - 18) / 11);
+  st.lines.slice(st.top, st.top + visible).forEach((line, r) => text(4, 18 + 11 * r, line, { size: 9.5 }));
+  if (st.lines.length > visible) {
+    const frac = st.top / Math.max(1, st.lines.length - visible);
+    rect(LW - 3, 18 + frac * (LH - 32), 2, 12);
+  }
+}
+
+function drawAlert() {
+  const lines = alertText.split("\n");
+  const h = 14 + 12 * lines.length, y0 = (LH - h) / 2;
+  rect(16, y0, LW - 32, h, "#000");
+  rect(16 + 1 / S, y0 + 1 / S, LW - 32 - 2 / S, h - 2 / S, "#fff");
+  lines.forEach((l, k) => text(LW / 2, y0 + 7 + 12 * k, l, { align: "center" }));
+}
+
+function updateStatus() {
+  const size = encodeOtt(rt).length;
+  let tempo = `tempo ${rt.tempo}`;
+  if (playBpm(rt.tempo) !== rt.tempo) tempo += ` (plays at ${playBpm(rt.tempo)})`;
+  document.getElementById("status").textContent =
+    `${rt.count()}/${SIZE} notes · ${tempo} · ringtone ${size} bytes, ${size <= SMS_PAYLOAD ? "fits in 1 SMS" : "needs 2+ SMS"}` +
+    (fileName ? ` · ${fileName}` : "");
+  document.title = `${dirty ? "*" : ""}${rt.title} — MeloCreate`;
+  document.getElementById("playBtn").textContent = play.on ? "Stop" : "Play";
+}
+
+// ---------------------------------------------------------------------------
+// Pointer input on the screen
+// ---------------------------------------------------------------------------
+function toLogical(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * LW, (e.clientY - r.top) / r.height * (LH + SOFT_H)];
+}
+let lastTap = { t: 0, idx: -1 };
+canvas.addEventListener("pointerdown", (e) => {
+  audio();
+  const [x, y] = toLogical(e);
+  if (y >= LH) { keyPressed(x < LW / 2 ? "SOFT1" : "SOFT2"); return; }
+  if (alertText) { dismissAlert(); return; }
+  if (screen === "editor") {
+    for (const [idx, nx] of visibleNotes()) {
+      const filled = rt.get(idx)[0] !== -1;
+      if (Math.abs(x - nx) <= 11 && (filled || idx === rt.lastIndex() + 1 || rt.isEmpty() && idx === 0)) {
+        const now = performance.now();
+        if (idx === rt.index && lastTap.idx === idx && now - lastTap.t < 400) openDuration();     // double tap
+        else if (idx !== rt.index) { rt.setIndex(idx); rt.trim(); previewNote(); refresh(); }
+        lastTap = { t: now, idx };
+        return;
+      }
+    }
+  } else if (screen === "duration") {
+    const tx = (LW - 96) / 2, ty = LH / 2 - 47;
+    const cx = Math.floor((x - tx) / 16), cy = Math.floor((y - ty) / 47);
+    if (cx >= 0 && cx < 6 && cy >= 0 && cy < 2) {
+      if (cx === pk.x && cy === pk.y) durationSelect(); else { pk.x = cx; pk.y = cy; }
+      refresh();
+    }
+  } else if (screen === "list") {
+    const row = Math.floor((y - 18) / ROW_H), k = listState.top + row;
+    if (row >= 0 && k < listState.items.length) {
+      if (k === listState.sel) listState.onSelect(k); else listState.sel = k;
+      refresh();
+    }
+  } else if (screen === "help") { keyPressed("BACK"); }
+});
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const d = e.deltaY < 0 ? 1 : -1;
+  if (screen === "editor") changeNote(d);
+  else if (screen === "list") listKey("", d > 0 ? "UP" : "DOWN");
+  else if (screen === "help") helpScroll(-d);
+  refresh();
+}, { passive: false });
+
+// ---------------------------------------------------------------------------
+// On-screen keypad
+// ---------------------------------------------------------------------------
+(function buildKeypad() {
+  const rows = [
+    [["Options", "SOFT1", "soft"], ["▲", "UP"], ["Menu", "SOFT2", "soft"]],
+    [["◀", "LEFT"], ["OK", "FIRE"], ["▶", "RIGHT"]],
+    [["", null], ["▼", "DOWN"], ["", null]],
+    "gap",
+    [["1", "1"], ["2", "2"], ["3", "3"]],
+    [["4", "4"], ["5", "5"], ["6", "6"]],
+    [["7", "7"], ["8", "8"], ["9", "9"]],
+    [["*", "*"], ["0", "0"], ["#", "#"]],
+  ];
+  const pad = document.getElementById("keypad");
+  for (const row of rows) {
+    if (row === "gap") { const g = document.createElement("div"); g.className = "gap"; pad.appendChild(g); continue; }
+    for (const [label, key, cls] of row) {
+      const el = document.createElement("div");
+      el.className = "k" + (cls ? " " + cls : "") + (key ? "" : " blank");
+      el.textContent = label || " ";
+      if (key) {
+        const tag = "vk:" + key;
+        const up = () => { el.classList.remove("on"); release(tag); };
+        el.addEventListener("pointerdown", (e) => {
+          e.preventDefault(); audio(); el.classList.add("on");
+          el.setPointerCapture && el.setPointerCapture(e.pointerId);
+          press(tag, key);
+        });
+        el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+        el.addEventListener("contextmenu", (e) => e.preventDefault());
+      }
+      pad.appendChild(el);
+    }
+  }
+})();
+
+// ---------------------------------------------------------------------------
+// Dialogs
+// ---------------------------------------------------------------------------
+function ask({ title, message = "", value = null, type = "text", min, max, maxLength, readonly = null, okText = "OK", cancel = true }) {
+  return new Promise((resolve) => {
+    const m = document.getElementById("modal");
+    const input = document.getElementById("dlgInput"), area = document.getElementById("dlgText");
+    document.getElementById("dlgTitle").textContent = title;
+    document.getElementById("dlgMsg").textContent = message;
+    input.style.display = value === null ? "none" : "";
+    area.style.display = readonly === null ? "none" : "";
+    input.type = type; input.value = value ?? ""; input.min = min ?? ""; input.max = max ?? "";
+    if (maxLength) input.maxLength = maxLength; else input.removeAttribute("maxLength");
+    area.value = readonly ?? "";
+    document.getElementById("dlgOk").textContent = okText;
+    const cancelBtn = document.getElementById("dlgCancel");
+    cancelBtn.style.display = cancel ? "" : "none";
+    m.classList.add("open");
+    setTimeout(() => { if (value !== null) { input.focus(); input.select(); } else if (readonly !== null) { area.focus(); area.select(); } else document.getElementById("dlgOk").focus(); }, 0);
+    const form = document.getElementById("dialog");
+    const done = (v) => {
+      m.classList.remove("open");
+      form.onsubmit = null; cancelBtn.onclick = null; m.onkeydown = null;
+      resolve(v);
+    };
+    form.onsubmit = (e) => { e.preventDefault(); done(value === null ? "" : input.value); };
+    cancelBtn.onclick = () => done(null);
+    m.onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+function touch() { dirty = true; remember(); }
+function confirmDiscard() { return !dirty || rt.isEmpty() || window.confirm("Discard the changes to this ringtone?"); }
+function setTune(newRt, name) {
+  stopPlay();
+  rt = newRt; ed.start = 0; fileName = name; dirty = false; screen = "editor";
+  remember(); refresh();
+}
+function download(name, data, type) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const safeName = () => (rt.title.replace(/[\\/:*?"<>|]/g, "_").trim() || "ringtone");
+
+async function openFile(file) {
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const isOtt = /\.ott$/i.test(file.name) || (buf[0] === 0x02 && buf[1] === 0x4a);
+    const tune = isOtt ? decodeOtt(buf) : Ringtone.fromRecord(new TextDecoder().decode(buf));
+    if (!confirmDiscard()) return;
+    setTune(tune, isOtt ? null : file.name);
+  } catch (e) {
+    await ask({ title: "Could not open " + file.name, message: e.message, cancel: false });
+  }
+}
+const fileInput = document.getElementById("fileInput");
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) openFile(fileInput.files[0]); fileInput.value = ""; });
+
+let dragDepth = 0;
+const drop = document.getElementById("drop");
+window.addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; drop.classList.add("on"); });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; drop.classList.remove("on"); } });
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => {
+  e.preventDefault(); dragDepth = 0; drop.classList.remove("on");
+  const f = e.dataTransfer.files[0];
+  if (f) openFile(f);
+});
+
+async function act(name) {
+  if (name === "new") { if (confirmDiscard()) setTune(new Ringtone(), null); }
+  else if (name === "open") fileInput.click();
+  else if (name === "save") { download(safeName() + ".mcr", rt.toRecord() + "\n", "text/plain"); fileName = safeName() + ".mcr"; dirty = false; refresh(); }
+  else if (name === "play") { audio(); togglePlay(); }
+  else if (name === "help") showHelp(HELP_EDITOR);
+  else {
+    if (rt.isEmpty()) { showAlert("The ringtone\nis empty"); return; }
+    if (name === "ott") download(safeName() + ".ott", encodeOtt(rt), "application/vnd.nokia.ringing-tone");
+    else if (name === "rtttl") {
+      download(safeName() + ".txt", toRtttl(rt) + "\n", "text/plain");
+      if (rt.entries().some(([, , dr]) => dr >= 2)) showAlert("RTTTL has no triplets\nor double dots: those\nnotes were simplified", 2600);
+    } else if (name === "wav") download(safeName() + ".wav", await renderWav(rt));
+    else if (name === "hex") {
+      const bytes = encodeOtt(rt), hex = toHex(bytes);
+      try { await navigator.clipboard.writeText(hex); showAlert(`Copied ${bytes.length} bytes\nas hex`); }
+      catch (e) { await ask({ title: "Smart Messaging hex", message: `${bytes.length} bytes. Select and copy:`, readonly: hex, cancel: false }); }
+    }
+  }
+}
+document.querySelectorAll(".toolbar button").forEach((b) => b.addEventListener("click", (e) => { e.currentTarget.blur(); act(b.dataset.act); }));
+document.getElementById("previewOn").addEventListener("change", (e) => e.currentTarget.blur());
+
+window.addEventListener("beforeunload", () => remember());
+
+// ---------------------------------------------------------------------------
+// Start: restore the work in progress
+// ---------------------------------------------------------------------------
+(function start() {
+  try {
+    const saved = localStorage.getItem(CURRENT_KEY);
+    if (saved) rt = Ringtone.fromRecord(saved);
+  } catch (e) { /* start empty */ }
+  resize();
+})();
+
+// for tests and the console
+window.MeloCreate = { Ringtone, encodeOtt, decodeOtt, toRtttl, toHex, renderWav, get tune() { return rt; } };
+</script>
+</body>
+</html>
